@@ -76,7 +76,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 
   var stemColor=[77,138,30], branchColor=[77,138,30], budColor=[184,217,122];
   var stemCss='rgb(77,138,30)', branchCss='rgb(77,138,30)';
-  var deadStem=[166,132,88], deadBranch=[166,132,88], deadBud=[226,214,128];
+  var deadStem=[166,132,88], deadBranch=[166,132,88], deadBud=[184,151,91];
 
   /* ---- параметры ---- */
   var MAX_BRANCHES=22;                       /* предохранитель, не рабочий регулятор */
@@ -109,6 +109,9 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
   var branches,drawStart,cameraY,cameraActive,segmentCount,lastBranchSide,waveSign,sideMass,sameRun;
   var mode,witherT;
   var dryStem,dryBranches,dryHold;
+  // Tune the whole loss gesture with one duration; the result hold is independent.
+  var WITHER_DURATION_SECONDS=1.4;
+  var WITHER_HOLD_SECONDS=0.5;
   var bloomStem,bloomBranches,bloomT,bloomHold;
   var rafId=null,rng=Math.random;
 
@@ -466,36 +469,23 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
   /* ---- распад в прах ---- */
 
 
-  function crumple(pts,a){
-    if(pts.length<2||a<=0) return pts;
-    var amp=CH*0.014*a,out=new Array(pts.length);
-    out[0]=pts[0];
-    for(var i=1;i<pts.length;i++){
-      var dx=pts[i].x-pts[i-1].x,dy=pts[i].y-pts[i-1].y,d=Math.hypot(dx,dy)||1;
-      var nx=-dy/d,ny=dx/d;
-      var w=Math.sin(i*0.032)*0.9+Math.sin(i*0.071+2.1)*0.5+Math.sin(i*0.019+4.3)*0.7;
-      w*=0.5+0.5*Math.sin(i*0.0068+1.2);
-      out[i]={x:pts[i].x+nx*w*amp,y:pts[i].y+ny*w*amp};
+  function dryEase(t){t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);}
+  function dryAngleDelta(a,b){return Math.atan2(Math.sin(b-a),Math.cos(b-a));}
+  function droopStem(pts,t){
+    if(pts.length<2) return pts;
+    var n=pts.length,span=Math.min(n-1,CH*0.27),start=n-1-span;
+    var tip=pts[n-1],prev=pts[Math.max(0,n-24)];
+    var side=tip.x>=prev.x?1:-1;
+    var amount=dryEase((t-0.04)/0.86),out=[{x:pts[0].x,y:pts[0].y}];
+    for(var i=1;i<n;i++){
+      var p=Math.max(0,(i-start)/span);
+      var rot=side*2.65*p*p*amount;
+      var dx=pts[i].x-pts[i-1].x,dy=pts[i].y-pts[i-1].y;
+      out.push({x:out[i-1].x+dx*Math.cos(rot)-dy*Math.sin(rot),
+                y:out[i-1].y+dx*Math.sin(rot)+dy*Math.cos(rot)});
     }
-    return out;}
-
-  function curlTip(pts,a){
-    if(pts.length<6||a<=0) return pts;
-    var n=pts.length;
-    var start=Math.floor(n*0.72);
-    var out=pts.slice(0,start+1);
-    var cx=pts[start].x,cy=pts[start].y;
-    var dx=pts[start].x-pts[start-1].x,dy=pts[start].y-pts[start-1].y;
-    var ang=Math.atan2(dy,dx),step=Math.hypot(dx,dy)||1;
-    var total=n-1-start;
-    var perStep=(Math.PI*1.1)/total*a;
-    for(var i=1;i<=total;i++){
-      ang+=perStep;
-      var k=1-(i/total)*a*0.22;
-      cx+=Math.cos(ang)*step*k;cy+=Math.sin(ang)*step*k;
-      out.push({x:cx,y:cy});
-    }
-    return out;}
+    return out;
+  }
 
   function startDry(){
     var visible=fullPath.slice(drawStart,revealIndex+1);
@@ -505,49 +495,57 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
       b=branchPose(b);
       return {pts:branchVisible(b),ai:b.originIdx-drawStart,leaf:b.leaf,bside:b.bside,lenBoost:b.lenBoost,leafAng:b.leafAng,front:b.front,appear:b.appear,color:phaseLeafCss(b.ph)};
     });
-    dryHold=0;}
+    witherT=0;dryHold=0;}
 
   function updateDry(){
-    witherT=Math.min(1,witherT+0.024);
-    if(witherT>=1) dryHold++;}
+    if(witherT<1){
+      witherT=Math.min(1,witherT+FIXED_STEP/WITHER_DURATION_SECONDS);
+      if(witherT>1-1e-9) witherT=1;
+    }
+    else dryHold+=FIXED_STEP;
+  }
 
   function drawDry(){
-    var wt=witherT;
-    var cs=dryStem?crumple(dryStem.pts,wt):null,leafList=[];
+    if(!dryStem) return;
+    var wt=Math.min(1,witherT+(witherT<1?Math.max(0,stepAccum)/WITHER_DURATION_SECONDS:0));
+    var colorT=dryEase(wt),cs=droopStem(dryStem.pts,wt),leafList=[];
     ctx.save();ctx.translate(0,-cameraY);
     function drawDryBranches(front){
-      if(!dryBranches) return;
-      var bw=CH*0.0044*(1-wt*0.45),bt=CH*0.0016*(1-wt*0.3);
-      var bc=lerpC(branchColor,deadBranch,wt);
+      var bw=CH*0.0044*(1-colorT*0.30),bt=CH*0.0016*(1-colorT*0.18);
       dryBranches.forEach(function(b){
-        if(b.front!==front) return;
-        var dx=0,dy=0;
-        if(cs&&b.ai>=0&&b.ai<cs.length){
-          dx=cs[b.ai].x-dryStem.pts[b.ai].x;
-          dy=cs[b.ai].y-dryStem.pts[b.ai].y;
-        }
-        var dp=crumple(curlTip(b.pts,wt),wt);
-        ctx.save();ctx.translate(dx,dy);ctx.globalAlpha=b.appear;
-        drawPath(dp,bc,bw,bt,0.4+b.appear*0.6);
-        leafList.push({b:b,pts:dp,dx:dx,dy:dy});
+        if(b.front!==front||!b.pts.length) return;
+        var ai=Math.max(0,Math.min(cs.length-1,b.ai));
+        var root=cs[ai],original=b.pts[0];
+        var lo=Math.max(0,ai-3),hi=Math.min(cs.length-1,ai+3);
+        var oldAng=Math.atan2(dryStem.pts[hi].y-dryStem.pts[lo].y,dryStem.pts[hi].x-dryStem.pts[lo].x);
+        var newAng=Math.atan2(cs[hi].y-cs[lo].y,cs[hi].x-cs[lo].x);
+        var stemTurn=dryAngleDelta(oldAng,newAng);
+        var delay=0.06+0.12*(1-ai/Math.max(1,cs.length-1));
+        var sag=dryEase((wt-delay)/(0.92-delay));
+        var target=b.bside>0?0.55:Math.PI-0.55;
+        var rotation=stemTurn+dryAngleDelta(b.leafAng+stemTurn,target)*sag;
+        var co=Math.cos(rotation),sn=Math.sin(rotation);
+        var dp=b.pts.map(function(p){var x=p.x-original.x,y=p.y-original.y;
+          return {x:root.x+x*co-y*sn,y:root.y+x*sn+y*co};});
+        ctx.save();ctx.globalAlpha=b.appear;
+        drawPath(dp,lerpC(branchColor,deadBranch,colorT),bw,bt,0.4+b.appear*0.6);
         ctx.restore();
+        var leaf=Object.assign({},b,{leafAng:b.leafAng+rotation,widthScale:1-0.44*sag});
+        leafList.push({b:leaf,pts:dp,sag:sag});
       });
     }
     drawDryBranches(false);
-    if(dryStem){
-      var thinned=dryStem.wBase*(1-wt*0.32);
-      drawAgedStem(cs,lerpC(stemColor,deadStem,wt),dryStem.wTip*(1-wt*0.2),thinned,dryStem.span);
-      drawDryBranches(true);
-      leafList.forEach(function(f){
-        ctx.save();ctx.translate(f.dx,f.dy);
-        drawRoundLeaf(f.pts,f.b.leaf*(1-wt*0.35),
-          lerpC(f.b.color.match(/\d+/g).map(Number),deadBranch,wt),'rgb(110,87,51)',f.b);
-        ctx.restore();
-      });
-      drawBud(cs,wt);
-    }
-    ctx.restore();}
-
+    drawAgedStem(cs,lerpC(stemColor,deadStem,colorT),dryStem.wTip*(1-colorT*0.15),
+      dryStem.wBase*(1-colorT*0.22),dryStem.span);
+    drawDryBranches(true);
+    leafList.forEach(function(f){
+      drawRoundLeaf(f.pts,f.b.leaf*(1-f.sag*0.10),
+        lerpC(f.b.color.match(/\d+/g).map(Number),deadBranch,colorT),
+        lerpC([67,111,35],[110,87,51],colorT),f.b);
+    });
+    drawBud(cs,dryEase((wt-0.02)/0.80));
+    ctx.restore();
+  }
 
   function drawAgedStem(pts,color,wTip,wBase,ageSpan){
     if(pts.length<2) return;
@@ -627,10 +625,10 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
   var LEAF_FRAC=0.036;            /* размер листа, доли высоты экрана */
   var leafCss='rgb(103,163,44)', leafVein='rgb(67,111,35)';
 
-  function leafBlade(bx,by,ang,R,color,vein){
+  function leafBlade(bx,by,ang,R,color,vein,widthScale){
     ctx.save();
     ctx.translate(bx,by);ctx.rotate(ang);
-    var L=R*2.05, W=R*0.80;
+    var L=R*2.05, W=R*0.80*(widthScale===undefined?1:widthScale);
     ctx.fillStyle=color;
     ctx.beginPath();
     ctx.moveTo(0,0);
@@ -657,7 +655,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 
     var R=CH*LEAF_FRAC*grow*(rndSeed&&rndSeed.lenBoost||LEAF_SMALL);
     ctx.save();ctx.globalAlpha=1;
-    leafBlade(tip.x,tip.y,ang,R,color,vein);ctx.restore();
+    leafBlade(tip.x,tip.y,ang,R,color,vein,rndSeed&&rndSeed.widthScale);ctx.restore();
 }
 
   // Flat silhouette halo: one translucent fill, no blur or overlapping alpha.
@@ -690,12 +688,12 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     if(pts.length<3) return;
     var tip=pts[pts.length-1],prev=pts[Math.max(0,pts.length-24)];
     var ang=Math.atan2(tip.y-prev.y,tip.x-prev.x)+Math.PI/2;
-    var sc=(CH*0.0018)*(1-t*0.45);
-    drawBudHalo(tip,ang,sc,t);
+    var sc=(CH*0.0018)*(1-t*0.15);
+    if(mode!=='withering') drawBudHalo(tip,ang,sc,t);
     ctx.fillStyle=lerpC(budColor,deadBud,t);
-    drawTeardrop(tip.x,tip.y,ang-0.55-t*0.5,16*sc,-5.0*sc);
-    drawTeardrop(tip.x,tip.y,ang+0.55+t*0.5,16*sc,5.0*sc);
-    drawTeardrop(tip.x,tip.y,ang,23*sc,5.4*sc);}
+    drawTeardrop(tip.x,tip.y,ang-0.55*(1-t*0.86),16*sc,-5.0*sc*(1-t*0.48));
+    drawTeardrop(tip.x,tip.y,ang+0.55*(1-t*0.86),16*sc,5.0*sc*(1-t*0.48));
+    drawTeardrop(tip.x,tip.y,ang,23*sc,5.4*sc*(1-t*0.48));}
 
   /* ---- расцветание (выигрыш) ---- */
   var BLOOM_FRAMES=150;
@@ -907,7 +905,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
       return;
     } else if(mode==='withering'){
       updateDry();
-      if(dryHold>=30){finishRound();return;}
+      if(dryHold+1e-9>=WITHER_HOLD_SECONDS){finishRound();return;}
     }
   }
 
@@ -998,4 +996,5 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 </script>
 </body>
 </html>
+
 
