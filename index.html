@@ -482,7 +482,11 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
       var p=Math.max(0,(i-start)/span);
       var crease=dryEase((t-0.25)/0.70);
       var wave=Math.asin(Math.sin(i*0.095))*0.13+Math.asin(Math.sin(i*0.043+1.7))*0.09;
-      var rot=side*1.75*p*p*amount+wave*crease*Math.min(1,i/24);
+      // Small late fold of the last 45 world units; preserve the main bend.
+      var tipSpan=Math.min(span,CH*0.065);
+      var tipP=Math.max(0,(i-(n-1-tipSpan))/tipSpan);
+      var tipFold=side*0.48*tipP*tipP*dryEase((t-0.30)/0.65);
+      var rot=side*1.75*p*p*amount+tipFold+wave*crease*Math.min(1,i/24);
       var dx=pts[i].x-pts[i-1].x,dy=pts[i].y-pts[i-1].y;
       out.push({x:out[i-1].x+dx*Math.cos(rot)-dy*Math.sin(rot),
                 y:out[i-1].y+dx*Math.sin(rot)+dy*Math.cos(rot)});
