@@ -768,25 +768,43 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     bloomBranches=branches.map(function(b){
       b=branchPose(b);
       var ai=b.originIdx-drawStart;
-      return {pts:branchVisible(b),leaf:b.leaf,bside:b.bside,lenBoost:b.lenBoost,leafAng:b.leafAng,front:b.front,appear:b.appear,color:phaseLeafCss(b.ph),trigger:Math.max(0,Math.min(1,ai/n))};
+      return {pts:branchVisible(b),leaf:b.leaf,bside:b.bside,lenBoost:b.lenBoost,leafAng:b.leafAng,front:b.front,appear:b.appear,color:phaseLeafCss(b.ph),ai:ai};
     });
     bloomT=0;bloomHold=0;}
 
-  function drawWave(pts,wPos,bandFrac,widthAt,fade){
-    var n=pts.length;
-    if(wPos<0||wPos>1||n<2) return;
-    var band=Math.max(14,n*bandFrac);
-    var c=n*wPos;
-    var from=Math.max(1,Math.floor(c-band)),to=Math.min(n-1,Math.ceil(c+band));
-    ctx.lineCap='round';ctx.lineJoin='round';
-    for(var i=from;i<=to;i++){
-      var k=1-Math.abs(i-c)/band;
-      if(k<=0) continue;
-      k=k*k*fade;
-      ctx.strokeStyle='rgba(214,240,168,'+(k*0.9).toFixed(3)+')';
-      ctx.lineWidth=widthAt(i,n)*(1+k*0.4);
-      ctx.beginPath();ctx.moveTo(pts[i-1].x,pts[i-1].y);ctx.lineTo(pts[i].x,pts[i].y);ctx.stroke();
-    }}
+  // This is a visual flourish after collection; gameplay growth stays frozen.
+  function bloomPose(t){
+    var raw=Math.max(0,Math.min(1,t/0.48));
+    var stretch=1-Math.pow(1-raw,3);
+    var open=dryEase((t-0.035)/0.64);
+    var settling=Math.max(0,Math.min(1,(t-0.38)/0.62));
+    var sway=Math.sin(settling*Math.PI*2)*Math.pow(1-settling,2)*CH*0.012;
+    var src=bloomStem.pts,n=src.length;
+    var span=Math.min(n-1,CH*0.32),growth=CH*0.035*stretch;
+    var pts=src.map(function(p,i){
+      var u=Math.max(0,(i-(n-1-span))/Math.max(1,span));
+      return {x:p.x+sway*u*u,y:p.y-growth*u*u};
+    });
+    var leaves=bloomBranches.map(function(b){
+      var ai=Math.max(0,Math.min(n-1,b.ai)),root=pts[ai],old=b.pts[0];
+      if(!old) return b;
+      var lo=Math.max(0,ai-3),hi=Math.min(n-1,ai+3);
+      var before=Math.atan2(src[hi].y-src[lo].y,src[hi].x-src[lo].x);
+      var after=Math.atan2(pts[hi].y-pts[lo].y,pts[hi].x-pts[lo].x);
+      var lift=dryEase((t-0.02-0.07*(1-ai/Math.max(1,n-1)))/0.48);
+      var rotation=dryAngleDelta(before,after)-b.bside*0.16*lift;
+      var co=Math.cos(rotation),sn=Math.sin(rotation);
+      var bp=b.pts.map(function(p){var x=p.x-old.x,y=p.y-old.y;
+        return {x:root.x+x*co-y*sn,y:root.y+x*sn+y*co};});
+      return Object.assign({},b,{pts:bp,leafAng:b.leafAng+rotation,
+        lenBoost:b.lenBoost*(1+0.06*lift),widthScale:1+0.10*lift});
+    });
+    // Reserve space for petals with a smooth camera move as the flower opens.
+    var tip0=src[n-1],panelY=CAMERA_TRIGGER_Y-CH*CAMERA_FRAC;
+    var finalNeed=Math.max(0,panelY+CH*0.083-(tip0.y-cameraY-CH*0.035));
+    var offset=cameraActive?finalNeed*open:0;
+    return {pts:pts,branches:leaves,open:open,offset:offset,sway:sway};
+  }
 
   function drawFlower(x,y,ang,turn,open,scale){
     if(turn<=0.02) return;
@@ -827,43 +845,32 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     ctx.restore();}
 
   function drawBloom(){
-    var t=bloomT;
-    var wave=t<0.26?(t/0.26):-1;
-    var SWAP=0.26;
-    var showBud=t<SWAP;
-    var op=Math.max(0,Math.min(1,(t-SWAP)/0.62));
-    var open=1-Math.pow(1-op,2.4);
-    var bump=t<SWAP?0:Math.sin(Math.min(1,op/0.55)*Math.PI);
-
-    // Ease down slightly during the light wave so petals clear the top panel.
-    var clearance=Math.min(1,t/0.26);
-    clearance=clearance*clearance*(3-2*clearance);
-    ctx.save();ctx.translate(0,-cameraY+(cameraActive?CH*0.03*clearance:0));
+    var t=Math.min(1,bloomT+Math.max(0,stepAccum)/FIXED_STEP/BLOOM_FRAMES);
+    var pose=bloomPose(t),pts=pose.pts,open=pose.open;
+    ctx.save();ctx.translate(0,-cameraY+pose.offset);
     var brW=CH*0.0044,brTip=CH*0.0016;
-    function drawBloomBranches(front){bloomBranches.forEach(function(b){
+    function drawBloomBranches(front){pose.branches.forEach(function(b){
       if(b.front!==front) return;
       ctx.save();ctx.globalAlpha=b.appear;
       drawPath(b.pts,branchCss,brW,brTip,0.4+b.appear*0.6);
       ctx.restore();
     });}
     drawBloomBranches(false);
-    drawAgedStem(bloomStem.pts,stemCss,bloomStem.wTip,bloomStem.wBase,bloomStem.span);
+    drawAgedStem(pts,stemCss,bloomStem.wTip,bloomStem.wBase,bloomStem.span);
     drawBloomBranches(true);
-    var bs=bloomStem;
-    var stemW=function(i,n){var r=Math.min(1,(n-i)/bs.span);return bs.wTip+(bs.wBase-bs.wTip)*r*r*r;};
-    if(wave>=0) drawWave(bs.pts,wave,0.09,stemW,1);
-    [false,true].forEach(function(front){bloomBranches.forEach(function(b){
+    [false,true].forEach(function(front){pose.branches.forEach(function(b){
       if(b.front===front) drawRoundLeaf(b.pts,b.leaf,b.color,leafVein,b);
     });});
-    var pts=bloomStem.pts;
     var tip=pts[pts.length-1],prev=pts[Math.max(0,pts.length-24)];
     var ang=Math.atan2(tip.y-prev.y,tip.x-prev.x)+Math.PI/2;
-    if(showBud){
-      drawBud(pts,0);
-    } else {
-      var lift=CH*0.012*(0.3+open*0.7);
+    var budFade=1-dryEase((t-0.09)/0.25);
+    if(budFade>0){ctx.save();ctx.globalAlpha*=budFade;drawBud(pts,0);ctx.restore();}
+    if(open>0){
+      var lift=CH*0.008;
+      ctx.save();ctx.globalAlpha*=dryEase(open/0.25);
       drawFlower(tip.x+Math.cos(ang-Math.PI/2)*lift,tip.y+Math.sin(ang-Math.PI/2)*lift,
-                 ang*0.25,1,open,(0.88+0.12*open)*(1+0.30*bump));
+        ang*0.25+pose.sway/CH*1.6,1,open,0.34+0.66*open);
+      ctx.restore();
     }
     ctx.restore();}
 
@@ -1051,6 +1058,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 </script>
 </body>
 </html>
+
 
 
 
