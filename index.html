@@ -699,7 +699,13 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 
   /* ---- расцветание (выигрыш) ---- */
   var BLOOM_FRAMES=150;
-  var petalColor=[236,241,214], petalEdge=[203,222,150], coreColor=[240,196,80];
+  // Flat aster: staggered rows of narrow petals, dark outside and light inside.
+  var ASTER_LAYERS=[
+    {count:22,length:1.38,width:0.145,delay:0.00,colors:['#8538A5','#9843B4']},
+    {count:19,length:1.12,width:0.150,delay:0.12,colors:['#B354C4','#C468D0']},
+    {count:15,length:0.84,width:0.135,delay:0.24,colors:['#D47DDA','#E395E4']}
+  ];
+  var coreColor=[240,196,80];
 
   function startBloom(){
     var visible=fullPath.slice(drawStart,revealIndex+1);
@@ -734,25 +740,37 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     ctx.save();ctx.translate(x,y);ctx.rotate(ang);
     ctx.scale(turn,1);
     var R=CH*0.045*scale;
-    var spread=0.16+open*0.84;
-    for(var i=0;i<5;i++){
-      var a=(i/5)*Math.PI*2-Math.PI/2;
-      var len=R*(0.95+open*0.45);
-      var wid=R*0.46*spread;
-      ctx.save();ctx.rotate(a);
-      ctx.fillStyle='rgb('+petalColor[0]+','+petalColor[1]+','+petalColor[2]+')';
-      ctx.beginPath();
-      ctx.moveTo(0,0);
-      ctx.bezierCurveTo(wid,-len*0.32,wid*0.82,-len*0.86,0,-len);
-      ctx.bezierCurveTo(-wid*0.82,-len*0.86,-wid,-len*0.32,0,0);
-      ctx.closePath();ctx.fill();
-      ctx.strokeStyle='rgba('+petalEdge[0]+','+petalEdge[1]+','+petalEdge[2]+',0.85)';
-      ctx.lineWidth=Math.max(0.8,R*0.035);
-      ctx.stroke();
-      ctx.restore();
+    ASTER_LAYERS.forEach(function(layer,row){
+      var unfold=Math.max(0,Math.min(1,(open-layer.delay)/(1-layer.delay)));
+      unfold=unfold*unfold*(3-2*unfold);
+      for(var i=0;i<layer.count;i++){
+        var a=i/layer.count*Math.PI*2+row*0.17;
+        // Deterministic variation keeps the silhouette organic without flicker.
+        var variation=1+0.045*Math.sin(i*2.4+row*1.7);
+        var len=R*layer.length*variation*(0.18+0.82*unfold);
+        var wid=R*layer.width*(0.28+0.72*unfold);
+        var bend=R*0.055*Math.sin(i*1.8+row)*unfold;
+        var base=R*0.07;
+        ctx.save();ctx.rotate(a);
+        ctx.fillStyle=layer.colors[i%2];
+        ctx.beginPath();ctx.moveTo(-wid*0.22,-base);
+        ctx.bezierCurveTo(-wid,-len*0.38,bend-wid*0.66,-len*0.88,bend,-len);
+        ctx.bezierCurveTo(bend+wid*0.66,-len*0.91,wid,-len*0.42,wid*0.22,-base);
+        ctx.closePath();ctx.fill();ctx.restore();
+      }
+    });
+    var coreR=R*(0.075+open*0.17);
+    ctx.fillStyle='rgb('+coreColor.join(',')+')';
+    ctx.beginPath();ctx.arc(0,0,coreR,0,Math.PI*2);ctx.fill();
+    // A few flat pollen dots remain legible at the actual mobile size.
+    if(open>0.45){
+      ctx.fillStyle='#FFE39A';
+      for(var j=0;j<7;j++){
+        var a=j*Math.PI*2/7;
+        ctx.beginPath();ctx.arc(Math.cos(a)*coreR*0.62,Math.sin(a)*coreR*0.62,coreR*0.10,0,Math.PI*2);ctx.fill();
+      }
+      ctx.beginPath();ctx.arc(0,0,coreR*0.13,0,Math.PI*2);ctx.fill();
     }
-    ctx.fillStyle='rgb('+coreColor[0]+','+coreColor[1]+','+coreColor[2]+')';
-    ctx.beginPath();ctx.arc(0,0,R*(0.06+open*0.24),0,Math.PI*2);ctx.fill();
     ctx.restore();}
 
   function drawBloom(){
@@ -980,3 +998,4 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 </script>
 </body>
 </html>
+
