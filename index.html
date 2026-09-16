@@ -739,12 +739,32 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     ctx.fill();ctx.restore();
   }
 
+  // Nine persistent calyx lobes. Length and width never shrink on opening.
+  function drawCalyx(sc,open,pitch){
+    for(var i=0;i<9;i++){
+      var group=i%3,rank=Math.floor(i/3);
+      var initial=[-0.55,0.55,0][group];
+      var length=(group===2?23:16)*sc*(1-rank*0.055);
+      var width=(group===2?5.4:5)*sc*(1-rank*0.10);
+      var progress=dryEase(Math.max(0,Math.min(1,(open-rank*0.035)/(0.82-rank*0.035))));
+      var target=(i/9*Math.PI*2)-Math.PI;
+      var angle=initial+(target-initial)*progress;
+      ctx.save();ctx.scale(1,1+(pitch-1)*progress);
+      ctx.fillStyle=lerpC(budColor,[77,138,30],progress*0.6);
+      drawTeardrop(0,0,angle,length,group===0?-width:width);
+      ctx.restore();
+    }
+  }
+
   function drawBud(pts,t){
     if(pts.length<3) return;
     var tip=pts[pts.length-1],prev=pts[Math.max(0,pts.length-24)];
     var ang=Math.atan2(tip.y-prev.y,tip.x-prev.x)+Math.PI/2;
     var sc=(CH*0.0018)*(1-t*0.15);
     if(mode!=='withering') drawBudHalo(tip,ang,sc,t);
+    if(mode!=='withering'){
+      ctx.save();ctx.translate(tip.x,tip.y);ctx.rotate(ang);drawCalyx(sc,0,1);ctx.restore();return;
+    }
     ctx.fillStyle=lerpC(budColor,deadBud,t);
     drawTeardrop(tip.x,tip.y,ang-0.55*(1-t*0.86),16*sc,-5.0*sc*(1-t*0.48));
     drawTeardrop(tip.x,tip.y,ang+0.55*(1-t*0.86),16*sc,5.0*sc*(1-t*0.48));
@@ -795,13 +815,6 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     ctx.strokeStyle=stemCss;ctx.lineWidth=CH*0.0034;ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(0,0);ctx.bezierCurveTo(0,hy*0.35,hx*0.3,hy*0.8,hx,hy);ctx.stroke();
     ctx.translate(hx,hy);ctx.rotate(lean);
-    function sepals(){
-      ctx.fillStyle=lerpC(budColor,[77,138,30],spread);
-      var fold=dryEase(Math.min(1,open/0.65));
-      drawTeardrop(0,0,-0.55-1.65*fold,(16-7*fold)*sc,-(5-2.8*fold)*sc);
-      drawTeardrop(0,0,0.55+1.65*fold,(16-7*fold)*sc,(5-2.8*fold)*sc);
-      drawTeardrop(0,0,2.8*fold,(23-16*fold)*sc,(5.4-3.3*fold)*sc);
-    }
     // Folded petals have height above the head, then flatten into its disc.
     function petal(layer,row,i){
       var a=i/layer.count*Math.PI*2+row*0.17;
@@ -830,8 +843,13 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
         }
       });
     }
+    // Calyx stays behind the whole corolla, including the far-side petals.
+    drawCalyx(sc,open,pitch);
+    // The opaque overlapping petal bases cover the calyx as the head opens.
+    var baseRadius=R*dryEase(Math.max(0,(open-0.18)/0.82));
+    ctx.fillStyle=ASTER_LAYERS[0].colors[0];ctx.beginPath();
+    ctx.ellipse(0,0,baseRadius,baseRadius*pitch,0,0,Math.PI*2);ctx.fill();
     petals(false);
-    sepals();
     var coreR=R*0.245*dryEase(Math.max(0,(open-0.25)/0.75));
     ctx.save();ctx.scale(1,pitch);
     ctx.fillStyle='rgb('+coreColor.join(',')+')';ctx.beginPath();ctx.arc(0,0,coreR,0,Math.PI*2);ctx.fill();
