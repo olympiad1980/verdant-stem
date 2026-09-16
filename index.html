@@ -760,7 +760,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
   ];
   var coreColor=[240,196,80];
 
-  function startBloom(){
+  function captureBloom(){
     var visible=fullPath.slice(drawStart,revealIndex+1);
     var matured=Math.min(1,grownPx/(CH*3));
     bloomStem={pts:visible.slice(),wTip:CH*0.0034,wBase:CH*0.019*(1+matured),span:CH*1.7};
@@ -770,40 +770,15 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
       var ai=b.originIdx-drawStart;
       return {pts:branchVisible(b),leaf:b.leaf,bside:b.bside,lenBoost:b.lenBoost,leafAng:b.leafAng,front:b.front,appear:b.appear,color:phaseLeafCss(b.ph),ai:ai};
     });
-    bloomT=0;bloomHold=0;}
+  }
 
-  // This is a visual flourish after collection; gameplay growth stays frozen.
+  var BLOOM_COAST_SECONDS=1.1;
+  function startBloom(){captureBloom();bloomT=0;bloomHold=0;}
+
+  // Keep the real generated path and natural leaf development during deceleration.
   function bloomPose(t){
-    var raw=Math.max(0,Math.min(1,t/0.48));
-    var stretch=1-Math.pow(1-raw,3);
-    var open=dryEase((t-0.035)/0.64);
-    var settling=Math.max(0,Math.min(1,(t-0.38)/0.62));
-    var sway=Math.sin(settling*Math.PI*2)*Math.pow(1-settling,2)*CH*0.012;
-    var src=bloomStem.pts,n=src.length;
-    var span=Math.min(n-1,CH*0.32),growth=CH*0.035*stretch;
-    var pts=src.map(function(p,i){
-      var u=Math.max(0,(i-(n-1-span))/Math.max(1,span));
-      return {x:p.x+sway*u*u,y:p.y-growth*u*u};
-    });
-    var leaves=bloomBranches.map(function(b){
-      var ai=Math.max(0,Math.min(n-1,b.ai)),root=pts[ai],old=b.pts[0];
-      if(!old) return b;
-      var lo=Math.max(0,ai-3),hi=Math.min(n-1,ai+3);
-      var before=Math.atan2(src[hi].y-src[lo].y,src[hi].x-src[lo].x);
-      var after=Math.atan2(pts[hi].y-pts[lo].y,pts[hi].x-pts[lo].x);
-      var lift=dryEase((t-0.02-0.07*(1-ai/Math.max(1,n-1)))/0.48);
-      var rotation=dryAngleDelta(before,after)-b.bside*0.16*lift;
-      var co=Math.cos(rotation),sn=Math.sin(rotation);
-      var bp=b.pts.map(function(p){var x=p.x-old.x,y=p.y-old.y;
-        return {x:root.x+x*co-y*sn,y:root.y+x*sn+y*co};});
-      return Object.assign({},b,{pts:bp,leafAng:b.leafAng+rotation,
-        lenBoost:b.lenBoost*(1+0.06*lift),widthScale:1+0.10*lift});
-    });
-    // Reserve space for petals with a smooth camera move as the flower opens.
-    var tip0=src[n-1],panelY=CAMERA_TRIGGER_Y-CH*CAMERA_FRAC;
-    var finalNeed=Math.max(0,panelY+CH*0.083-(tip0.y-cameraY-CH*0.035));
-    var offset=cameraActive?finalNeed*open:0;
-    return {pts:pts,branches:leaves,open:open,offset:offset,sway:sway};
+    return {pts:bloomStem.pts,branches:bloomBranches,
+      open:dryEase(t/0.56),offset:0,sway:0};
   }
 
   function drawFlower(x,y,ang,turn,open,scale){
@@ -916,17 +891,16 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     resetState();draw();}
 
   /* ---- цикл ---- */
-  function updateStep(){
-    if(mode==='active'){
+  function advancePlant(speed,trackGrowth,flowerOpen){
       var before=revealIndex;
-      revealAccum+=REVEAL_SPEED;
+      revealAccum+=REVEAL_SPEED*speed;
       while(revealAccum>=1&&revealIndex<fullPath.length-1){revealIndex++;revealAccum-=1;}
-      grownPx+=(revealIndex-before)*STEP_PX;
+      if(trackGrowth) grownPx+=(revealIndex-before)*STEP_PX;
       if(fullPath.length-revealIndex<CH*0.2) extendMainPath();
       trySpawnBranch();
       fillLowerFoliage();
       branches.forEach(function(b){
-        b.age++;
+        b.age+=speed;
         var appearance=branchAppearance(b,b.age);
         Object.assign(b,appearance);
         var nl=b.leaf;
@@ -936,11 +910,11 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
         b.leaf=nl;
       });
       var tip=fullPath[revealIndex];
-      var desired=tip.y-CAMERA_TRIGGER_Y;
+      var desired=tip.y-(CAMERA_TRIGGER_Y+CH*0.028*flowerOpen);
       if(!cameraActive&&desired<0) cameraActive=true;
       if(cameraActive){
         cameraY+=(desired-cameraY)*0.10;
-        if(cameraY>desired) cameraY=desired;
+        if(trackGrowth&&cameraY>desired) cameraY=desired;
       }
       branches=branches.filter(function(b){
         if(branchTopBound(b)-cameraY<=CH+8) return true;
@@ -958,8 +932,17 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
         branches.forEach(function(b){b.originIdx-=drawStart;});
         drawStart=0;
       }
+  }
+
+  function updateStep(){
+    if(mode==='active'){
+      advancePlant(1,true,0);
     } else if(mode==='blooming'){
+      var elapsed=bloomT*BLOOM_FRAMES*FIXED_STEP;
+      var speed=1-dryEase(elapsed/BLOOM_COAST_SECONDS);
       bloomT=Math.min(1,bloomT+1/BLOOM_FRAMES);
+      advancePlant(speed,false,dryEase(bloomT/0.56));
+      captureBloom();
       if(bloomT>=1){
         bloomHold++;
         if(bloomHold>=75){finishRound();return;}
@@ -1058,6 +1041,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 </script>
 </body>
 </html>
+
 
 
 
