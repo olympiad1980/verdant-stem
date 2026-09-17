@@ -649,13 +649,13 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 
   function leafBlade(bx,by,ang,R,color,vein,widthScale,dryFold,drySeed){
     ctx.save();ctx.translate(bx,by);ctx.rotate(ang);
-    var L=R*2.05,W=R*0.52*(widthScale===undefined?1:widthScale);
+    var L=R*2.55,W=R*0.36*(widthScale===undefined?1:widthScale);
     var maturity=dryEase(Math.max(0,Math.min(1,(R/CH-0.010)/0.025)));
     var fold=dryFold||0,seed=drySeed||0;
     function point(u,side){
       var center=W*0.12*Math.sin(u*Math.PI*0.75);
-      // Rounded lower shoulder and long taper, with no angular midpoint.
-      var shape=4.5*Math.pow(u,0.85)*Math.pow(1-u,1.45);
+      // Slender elongated blade: rounded sides, about four lengths per width.
+      var shape=Math.pow(Math.sin(Math.PI*u),0.85)*(1-0.22*u);
       var notch=0;
       [0.24,0.40,0.56].forEach(function(at,i){
         var d=u-(at+(side>0?0.015:0));
