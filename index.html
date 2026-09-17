@@ -648,54 +648,40 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
   var leafCss='rgb(103,163,44)', leafVein='rgb(67,111,35)';
 
   function leafBlade(bx,by,ang,R,color,vein,widthScale,dryFold,drySeed){
-    ctx.save();
-    ctx.translate(bx,by);ctx.rotate(ang);
-    var L=R*2.05, W=R*0.80*(widthScale===undefined?1:widthScale);
-    ctx.fillStyle=color;
-    if(dryFold>0){
-      var fold=dryFold,seed=drySeed||0;
-      function warp(x,y){
-        var u=x/L;
-        var bend=W*fold*(0.32*Math.sin(u*Math.PI*2.5+seed*2)*Math.sin(u*Math.PI)
-          +0.27*Math.max(0,(u-0.72)/0.28)*(seed>0.5?1:-1));
-        var crinkle=1-fold*0.20*(0.5+0.5*Math.sin(u*23+seed*9));
-        return {x:x,y:y*crinkle+bend};
-      }
-      function curve(a,b,c,d){
-        for(var j=1;j<=12;j++){
-          var t=j/12,q=1-t;
-          var p=warp(q*q*q*a[0]+3*q*q*t*b[0]+3*q*t*t*c[0]+t*t*t*d[0],
-            q*q*q*a[1]+3*q*q*t*b[1]+3*q*t*t*c[1]+t*t*t*d[1]);
-          ctx.lineTo(p.x,p.y);
-        }
-      }
-      ctx.beginPath();ctx.moveTo(0,0);
-      curve([0,0],[L*.10,-W*.62],[L*.52,-W*1.05],[L*.90,-W*.34]);
-      curve([L*.90,-W*.34],[L*1.06,-W*.06],[L*1.06,W*.06],[L*.90,W*.34]);
-      curve([L*.90,W*.34],[L*.52,W*1.05],[L*.10,W*.62],[0,0]);
-      ctx.closePath();ctx.fill();
-      if(R>CH*.010){
-        ctx.strokeStyle=vein;ctx.lineWidth=Math.max(.55,R*.035);ctx.lineCap='round';
-        ctx.beginPath();
-        for(var k=0;k<=18;k++){var v=warp(L*(.05+.87*k/18),0);if(k===0)ctx.moveTo(v.x,v.y);else ctx.lineTo(v.x,v.y);}
-        ctx.stroke();
-        ctx.globalAlpha*=fold*.5;
-        [.34,.62].forEach(function(u,i){var a=warp(L*u,0),b=warp(L*(u+.11),W*(i===0?-.50:.48));
-          ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();});
-      }
-      ctx.restore();return;
+    ctx.save();ctx.translate(bx,by);ctx.rotate(ang);
+    var L=R*2.05,W=R*0.80*(widthScale===undefined?1:widthScale);
+    var maturity=dryEase(Math.max(0,Math.min(1,(R/CH-0.010)/0.025)));
+    var fold=dryFold||0,seed=drySeed||0;
+    function point(u,side){
+      var center=W*0.14*Math.sin(u*Math.PI*0.75);
+      var shape=Math.pow(Math.sin(Math.PI*u),0.95)*(0.72+0.28*u);
+      // Four broad teeth, subdued on small young leaves; offset on each edge.
+      var phase=u*4.5+(side>0?0.20:0);
+      var tooth=1-Math.abs((phase-Math.floor(phase))*2-1);
+      var envelope=Math.sin(Math.PI*u);
+      var width=W*(0.58+0.16*maturity)*shape*(side<0?1:0.88);
+      width*=1+0.18*maturity*tooth*envelope;
+      var y=center+side*width;
+      var bend=W*fold*(0.32*Math.sin(u*Math.PI*2.5+seed*2)*Math.sin(u*Math.PI)
+        +0.27*Math.max(0,(u-0.72)/0.28)*(seed>0.5?1:-1));
+      return {x:L*u,y:y*(1-fold*0.20*(0.5+0.5*Math.sin(u*23+seed*9)))+bend};
     }
-    ctx.beginPath();
-    ctx.moveTo(0,0);
-    ctx.bezierCurveTo(L*0.10,-W*0.62, L*0.52,-W*1.05, L*0.90,-W*0.34);
-    ctx.bezierCurveTo(L*1.06,-W*0.06, L*1.06,W*0.06, L*0.90,W*0.34);
-    ctx.bezierCurveTo(L*0.52,W*1.05, L*0.10,W*0.62, 0,0);
+    ctx.fillStyle=color;ctx.beginPath();
+    for(var i=0;i<=72;i++){var p=point(i/72,-1);if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);}
+    for(var i=71;i>=0;i--){var p=point(i/72,1);ctx.lineTo(p.x,p.y);}
     ctx.closePath();ctx.fill();
     if(R>CH*0.010){
-      ctx.strokeStyle=vein;ctx.lineWidth=Math.max(0.55,R*0.035);ctx.lineCap='round';
-      ctx.beginPath();ctx.moveTo(L*0.05,0);ctx.lineTo(L*0.92,0);ctx.stroke();
+      ctx.strokeStyle=vein;ctx.lineWidth=Math.max(0.55,R*0.035);ctx.lineCap='round';ctx.beginPath();
+      for(var k=0;k<=24;k++){var v=point(0.05+0.91*k/24,0);if(k===0)ctx.moveTo(v.x,v.y);else ctx.lineTo(v.x,v.y);}
+      ctx.stroke();
+      if(fold>0){
+        ctx.globalAlpha*=fold*0.5;
+        [0.34,0.62].forEach(function(u,i){var a=point(u,0),b=point(u+0.11,i===0?-0.7:0.7);
+          ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();});
+      }
     }
-    ctx.restore();}
+    ctx.restore();
+  }
 
   function leafAngleOf(pts,bside,center){
     var n=pts.length,a=pts[n-1],b=pts[Math.max(0,n-2)];
@@ -733,35 +719,31 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
       ctx.closePath();ctx.restore();
     }
     // Trace every petal in the same winding direction for a solid union.
-    petal(-0.55-t*0.5,16*sc,5*sc);
-    petal(0.55+t*0.5,16*sc,5*sc);
-    petal(0,23*sc,5.4*sc);
+    petal(-0.32-t*0.5,18*sc,5.5*sc);
+    petal(0.32+t*0.5,18*sc,5.5*sc);
+    petal(-0.15,21*sc,5.8*sc);
+    petal(0.15,21*sc,5.8*sc);
+    petal(0,23*sc,6.4*sc);
     ctx.fill();ctx.restore();
   }
 
-  // Nine persistent calyx lobes. Length and width never shrink on opening.
+  // Four overlapping side lobes plus the central front lobe form a tight bud.
   function drawCalyx(sc,open,pitch){
-    for(var i=0;i<9;i++){
-      if(i===2) continue; // This central lobe is drawn in front of the corolla.
-      var group=i%3,rank=Math.floor(i/3);
-      var initial=[-0.55,0.55,0][group];
-      var length=(group===2?23:16)*sc*(1-rank*0.055);
-      var width=(group===2?5.4:5)*sc*(1-rank*0.10);
-      var progress=dryEase(Math.max(0,Math.min(1,(open-rank*0.035)/(0.82-rank*0.035))));
-      var target=(i/9*Math.PI*2)-Math.PI;
-      var angle=initial+(target-initial)*progress;
+    var lobes=[[-0.32,18,5.5,-2.25],[0.32,18,5.5,2.25],[-0.15,21,5.8,-1.15],[0.15,21,5.8,1.15]];
+    lobes.forEach(function(lobe,i){
+      var progress=dryEase(Math.max(0,Math.min(1,(open-i*0.025)/(0.82-i*0.025))));
       ctx.save();ctx.scale(1,1+(pitch-1)*progress);
       ctx.fillStyle=lerpC(budColor,[77,138,30],progress*0.6);
-      drawTeardrop(0,0,angle,length,group===0?-width:width);
+      drawTeardrop(0,0,lobe[0]+(lobe[3]-lobe[0])*progress,lobe[1]*sc,lobe[2]*sc*(lobe[0]<0?-1:1));
       ctx.restore();
-    }
+    });
   }
 
   function drawFrontCalyx(sc,open,pitch){
     // A fixed-length central lobe folds toward the viewer, never sideways.
-    var fold=dryEase(Math.max(0,Math.min(1,(open-0.10)/0.76)));
+    var fold=dryEase(Math.max(0,Math.min(1,(open-0.18)/0.70)));
     var projected=Math.cos(fold*Math.PI*0.91);
-    var length=23*sc,width=5.4*sc;
+    var length=23*sc,width=6.4*sc;
     ctx.save();
     // The growing corolla covers the folded lobe; no alpha fade or size loss.
     var cover=CH*0.045*dryEase(Math.max(0,Math.min(1,(open-0.48)/0.42)));
