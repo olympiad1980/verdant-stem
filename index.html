@@ -653,8 +653,8 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     var maturity=Math.max(0,Math.min(1,shapeAge||0));
     var elongation=dryEase(maturity);
     var teeth=dryEase((maturity-0.45)/0.55);
-    var L=R*(1.35+0.85*elongation);
-    var W=R*(0.52-0.12*elongation)*(widthScale===undefined?1:widthScale);
+    var L=R*(1.00+1.20*elongation);
+    var W=R*(0.52+0.02*elongation)*(widthScale===undefined?1:widthScale);
     var fold=dryFold||0,seed=drySeed||0;
     function point(u,side){
       var center=W*0.12*Math.sin(u*Math.PI*0.75);
