@@ -118,6 +118,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
   function stopLoop(){if(rafId!==null){cancelAnimationFrame(rafId);rafId=null;}}
   function startLoop(){stopLoop();lastTime=performance.now();stepAccum=0;rafId=requestAnimationFrame(tick);}
 
+  var ACTION_ZONE_Y=630;
   function resize(){
     DPR=Math.min(2,window.devicePixelRatio||1);
     var vw=stage.clientWidth,vh=stage.clientHeight;
@@ -128,6 +129,8 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     var mw=document.getElementById('growth-panel');
     var mb=mw.getBoundingClientRect().bottom-stage.getBoundingClientRect().top;
     CAMERA_TRIGGER_Y=Math.max(CH*0.06,mb/vh*CH+CH*CAMERA_FRAC);
+    var actionRect=actionBtn.getBoundingClientRect();
+    ACTION_ZONE_Y=(actionRect.top-stage.getBoundingClientRect().top)/vh*CH;
     REVEAL_SPEED=CH*SPEED_FRAC;
     SPAWN_LAG_PX=CH*SPAWN_LAG_FRAC;
     START={x:CW*0.24,y:CH*0.90};
@@ -607,9 +610,9 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     pose.pts.forEach(function(p){top=Math.min(top,p.y);});
     if(pose.leaf>0){
       var pts=branchVisible(pose),tip=pts[pts.length-1];
-      var R=CH*LEAF_FRAC*pose.leaf*pose.lenBoost;
+      var R=CH*LEAF_FRAC*pose.leaf*pose.lenBoost*1.25;
       // Conservative bounds of all leaf Bezier control points, including width.
-      var leafTop=tip.y+Math.min(0,Math.sin(pose.leafAng)*R*2.05*1.06)
+      var leafTop=tip.y+Math.min(0,Math.sin(pose.leafAng)*R*2.20*1.06)
                         -Math.abs(Math.cos(pose.leafAng))*R*0.80*1.05;
       top=Math.min(top,leafTop);
     }
@@ -624,7 +627,10 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
       var a=b.pts[i],c=b.pts[i+1];
       out.push({x:a.x+(c.x-a.x)*frac,y:a.y+(c.y-a.y)*frac});
     }
-    return out;}
+    // Short juvenile petioles lengthen continuously as the blade matures.
+    var age=Math.max(0,Math.min(1,((b.lenBoost||LEAF_SMALL)-LEAF_SMALL)/(LEAF_LARGE-LEAF_SMALL)));
+    var reach=0.72+0.28*dryEase(age),root=out[0];
+    return out.map(function(p){return {x:root.x+(p.x-root.x)*reach,y:root.y+(p.y-root.y)*reach};});}
 
   function drawPath(pts,color,wBase,wTip,scaleMul){
     if(pts.length<2) return;
@@ -653,7 +659,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     var maturity=Math.max(0,Math.min(1,shapeAge||0));
     var elongation=dryEase(maturity);
     var teeth=dryEase((maturity-0.45)/0.55);
-    var L=R*(1.00+1.20*elongation);
+    var L=R*(1.50+0.70*elongation);
     var W=R*(0.52+0.02*elongation)*(widthScale===undefined?1:widthScale);
     var fold=dryFold||0,seed=drySeed||0;
     function point(u,side){
@@ -699,13 +705,18 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     return Math.atan2(a.y-b.y,a.x-b.x);
   }
 
+  function lowerLeafScale(y){
+    var distance=Math.abs(y-cameraY-ACTION_ZONE_Y);
+    return 1+0.25*(1-dryEase(distance/(CH*0.13)));
+  }
+
   function drawRoundLeaf(pts,grow,color,vein,rndSeed){
     if(grow<=0||pts.length<2) return;
     var n=pts.length;
     var tip=pts[n-1];
     var ang=(rndSeed&&rndSeed.leafAng!==undefined)?rndSeed.leafAng:leafAngleOf(pts,rndSeed&&rndSeed.bside,false);
 
-    var R=CH*LEAF_FRAC*grow*(rndSeed&&rndSeed.lenBoost||LEAF_SMALL);
+    var R=CH*LEAF_FRAC*grow*(rndSeed&&rndSeed.lenBoost||LEAF_SMALL)*lowerLeafScale(tip.y);
     ctx.save();ctx.globalAlpha=1;
     var shapeAge=((rndSeed&&rndSeed.lenBoost||LEAF_SMALL)-LEAF_SMALL)/(LEAF_LARGE-LEAF_SMALL);
     leafBlade(tip.x,tip.y,ang,R,color,vein,rndSeed&&rndSeed.widthScale,rndSeed&&rndSeed.dryFold,rndSeed&&rndSeed.drySeed,shapeAge);ctx.restore();
