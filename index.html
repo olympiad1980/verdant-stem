@@ -649,17 +649,20 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
 
   function leafBlade(bx,by,ang,R,color,vein,widthScale,dryFold,drySeed){
     ctx.save();ctx.translate(bx,by);ctx.rotate(ang);
-    var L=R*2.05,W=R*0.80*(widthScale===undefined?1:widthScale);
+    var L=R*2.05,W=R*0.52*(widthScale===undefined?1:widthScale);
     var maturity=dryEase(Math.max(0,Math.min(1,(R/CH-0.010)/0.025)));
     var fold=dryFold||0,seed=drySeed||0;
-    function point(u,side,edge){
-      var center=W*0.14*Math.sin(u*Math.PI*0.75);
-      var shape=Math.pow(Math.sin(Math.PI*u),0.95)*(0.72+0.28*u);
-      // Broad forward-pointing lobes follow the supplied leaf template.
-      var natural=0.74*shape;
-      var toothStrength=maturity*(1-0.85*dryEase((u-0.56)/0.30));
-      var contour=edge===undefined?natural:natural+(edge-natural)*toothStrength;
-      var width=W*contour*(side<0?1:0.92);
+    function point(u,side){
+      var center=W*0.12*Math.sin(u*Math.PI*0.75);
+      // Rounded lower shoulder and long taper, with no angular midpoint.
+      var shape=4.5*Math.pow(u,0.85)*Math.pow(1-u,1.45);
+      var notch=0;
+      [0.24,0.40,0.56].forEach(function(at,i){
+        var d=u-(at+(side>0?0.015:0));
+        var support=d<0?0.012:0.055;
+        if(Math.abs(d)<support) notch+=0.09*(1-i*0.18)*(1-Math.abs(d)/support);
+      });
+      var width=W*shape*(1-maturity*notch)*(side<0?1:0.94);
       var y=center+side*width;
       var bend=W*fold*(0.32*Math.sin(u*Math.PI*2.5+seed*2)*Math.sin(u*Math.PI)
         +0.27*Math.max(0,(u-0.72)/0.28)*(seed>0.5?1:-1));
@@ -667,19 +670,9 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
     }
     ctx.fillStyle=color;ctx.beginPath();
     function edgePoints(side){
-      var out=[point(0,side,0)],last=[0,0];
-      var lobes=side<0?[[.25,.54,.245,.43],[.46,.85,.455,.68],[.68,.89,.69,.83],[.85,.62,.86,.61]]:
-        [[.22,.49,.215,.39],[.43,.82,.425,.66],[.65,.91,.66,.85],[.83,.65,.84,.64]];
-      lobes.push([1,0,1,0]);
-      lobes.forEach(function(lobe){
-        var end=[lobe[0],lobe[1]],cx=last[0]+(end[0]-last[0])*.70,cy=end[0]===1?last[1]*0.5:Math.max(last[1],end[1])*.98;
-        for(var j=1;j<=12;j++){
-          var t=j/12,q=1-t;
-          out.push(point(q*q*last[0]+2*q*t*cx+t*t*end[0],side,q*q*last[1]+2*q*t*cy+t*t*end[1]));
-        }
-        last=[lobe[2],lobe[3]];
-        for(var j=1;j<=4;j++){var t=j/4;out.push(point(end[0]+(last[0]-end[0])*t,side,end[1]+(last[1]-end[1])*t));}
-      });return out;
+      var out=[];
+      for(var i=0;i<=120;i++)out.push(point(i/120,side));
+      return out;
     }
     var outline=edgePoints(-1).concat(edgePoints(1).reverse());
     outline.forEach(function(p,i){if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);});
