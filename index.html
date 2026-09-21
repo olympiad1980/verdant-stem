@@ -157,7 +157,7 @@
   </head>
   <body>
     <div id="app">
-      <button id="lose">проигрыш</button>
+      <button id="lose" disabled>Увядание</button>
       <button id="fs" aria-label="На весь экран">
         <svg viewBox="0 0 24 24">
           <path id="fsIcon" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
@@ -165,7 +165,7 @@
       </button>
       <div id="stage"><canvas id="cv"></canvas></div>
       <div id="growth-panel" aria-hidden="true"></div>
-      <div id="bottom"><button id="action">Посадить</button></div>
+      <div id="bottom"><button id="action">Старт</button></div>
     </div>
 
     <script>
@@ -1821,7 +1821,8 @@
         function finishRound() {
           mode = "idle";
           actionBtn.disabled = false;
-          actionBtn.textContent = "Посадить";
+          actionBtn.textContent = "Старт";
+          loseBtn.disabled = true;
           actionBtn.classList.remove("stop");
           resetState();
           draw();
@@ -1929,13 +1930,15 @@
             mode = "blooming";
             startBloom();
             actionBtn.disabled = true;
-            actionBtn.textContent = "Собрано";
+            actionBtn.textContent = "Цветение";
+            loseBtn.disabled = true;
             actionBtn.classList.remove("stop");
             startLoop();
           } else if (mode === "idle") {
             resetState();
             mode = "active";
-            actionBtn.textContent = "Собрать";
+            actionBtn.textContent = "Стоп";
+            loseBtn.disabled = false;
             actionBtn.classList.add("stop");
             startLoop();
           }
@@ -1949,7 +1952,8 @@
           mode = "withering";
           startDry();
           actionBtn.disabled = true;
-          actionBtn.textContent = "Сгорело";
+          actionBtn.textContent = "Увядание";
+          loseBtn.disabled = true;
           actionBtn.classList.remove("stop");
           startLoop();
         });
