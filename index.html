@@ -174,6 +174,8 @@
         var ctx = canvas.getContext("2d");
         var actionBtn = document.getElementById("action");
         var stage = document.getElementById("stage");
+        var loseBtn = document.getElementById("lose");
+        var growthPanel = document.getElementById("growth-panel");
 
         var stemColor = [77, 138, 30],
           branchColor = [77, 138, 30],
@@ -212,14 +214,13 @@
         var FIXED_STEP = 1 / 60;
         var lastTime = 0,
           stepAccum = 0,
-          hiddenAt = null;
+          wasHidden = false;
         var CAMERA_FRAC = 0.055; // Small gap above the growing bud; bloom gets its own clearance.
         var STEP_PX = 1.0,
           MAX_TURN = 0.03;
 
         var CW = 402,
-          CH = 700,
-          DPR = 1;
+          CH = 700;
         var CAMERA_TRIGGER_Y, REVEAL_SPEED, SPAWN_LAG_PX, START;
 
         var fullPath, revealIndex, revealAccum, nextSpawnAt, grownPx;
@@ -255,7 +256,7 @@
 
         var ACTION_ZONE_Y = 630;
         function resize() {
-          DPR = Math.min(2, window.devicePixelRatio || 1);
+          var DPR = Math.min(2, window.devicePixelRatio || 1);
           var vw = stage.clientWidth,
             vh = stage.clientHeight;
           if (vw <= 0 || vh <= 0) return;
@@ -263,9 +264,8 @@
           canvas.height = Math.round(vh * DPR);
           // The plant always grows in the same 402 x 700 world; resize only projects it.
           ctx.setTransform(canvas.width / CW, 0, 0, canvas.height / CH, 0, 0);
-          var mw = document.getElementById("growth-panel");
           var mb =
-            mw.getBoundingClientRect().bottom -
+            growthPanel.getBoundingClientRect().bottom -
             stage.getBoundingClientRect().top;
           CAMERA_TRIGGER_Y = Math.max(
             CH * 0.06,
@@ -568,7 +568,7 @@
             var b = branches[i];
             var sy = b.pts[0].y - cameraY;
             if (sy > CH * 0.62) continue; /* только верхние две трети кадра */
-            top[b.bside > 0 ? 1 : 0] += b.mass;
+            top[b.bside > 0 ? 1 : 0] += b.leaf;
           }
           var diff = top[1] - top[0];
           var s;
@@ -594,6 +594,24 @@
           nextSpawnAt =
             from +
             CH * (SPAWN_GAP_MIN + rng() * (SPAWN_GAP_MAX - SPAWN_GAP_MIN));
+        }
+
+        function createBranch(pts, originIdx, bside, front) {
+          return {
+            pts: pts,
+            originIdx: originIdx,
+            revealIndex: 0,
+            revealF: 0,
+            appear: 0,
+            age: 0,
+            birthTipY: fullPath[revealIndex].y,
+            leaf: 0,
+            bside: bside,
+            front: front,
+            lenBoost: 1,
+            ph: 0,
+            leafAng: leafAngleOf(pts),
+          };
         }
 
         function trySpawnBranch() {
@@ -631,22 +649,7 @@
           }
           lastBranchSide = bside;
           sameRun = bside === previousSide ? previousRun + 1 : 1;
-          branches.push({
-            pts: pts,
-            originIdx: originIdx,
-            revealIndex: 0,
-            revealF: 0,
-            appear: 0,
-            age: 0,
-            birthTipY: fullPath[revealIndex].y,
-            leaf: 0,
-            bside: bside,
-            mass: 0,
-            front: false,
-            lenBoost: 1,
-            ph: 0,
-            leafAng: leafAngleOf(pts),
-          });
+          branches.push(createBranch(pts, originIdx, bside, false));
         }
 
         /* Additional shoots grow on older stem sections. */
@@ -687,22 +690,7 @@
           }
           var pts = buildBranchPath(originIdx, cside, true);
           if (!leafSpaceAvailable(pts, leafAngleOf(pts))) return;
-          branches.push({
-            pts: pts,
-            originIdx: originIdx,
-            revealIndex: 0,
-            revealF: 0,
-            appear: 0,
-            age: 0,
-            birthTipY: fullPath[revealIndex].y,
-            leaf: 0,
-            bside: cside,
-            mass: 0,
-            front: true,
-            lenBoost: 1,
-            ph: 0,
-            leafAng: leafAngleOf(pts),
-          });
+          branches.push(createBranch(pts, originIdx, cside, true));
         }
 
         // Reserve a mature leaf's silhouette, including for a dormant front branch.
@@ -1560,7 +1548,7 @@
           ctx.restore();
         }
 
-        /* ---- расцветание (выигрыш) ---- */
+        /* ---- раскрытие астры ---- */
         var BLOOM_FRAMES = 150;
         // Flat aster: staggered rows of narrow petals, dark outside and light inside.
         var ASTER_LAYERS = [
@@ -1818,12 +1806,9 @@
           ctx.restore();
         }
 
-        function finishRound() {
+        function finishAnimation() {
           mode = "idle";
-          actionBtn.disabled = false;
-          actionBtn.textContent = "Старт";
-          loseBtn.disabled = true;
-          actionBtn.classList.remove("stop");
+          syncControls();
           resetState();
           draw();
         }
@@ -1844,7 +1829,6 @@
             b.age += speed;
             var appearance = branchAppearance(b, b.age);
             Object.assign(b, appearance);
-            b.mass = b.leaf;
           });
           var tip = fullPath[revealIndex];
           var desired = tip.y - (CAMERA_TRIGGER_Y + CH * 0.028 * flowerOpen);
@@ -1854,8 +1838,7 @@
             if (trackGrowth && cameraY > desired) cameraY = desired;
           }
           branches = branches.filter(function (b) {
-            if (branchTopBound(b) - cameraY <= CH + 8) return true;
-            return false;
+            return branchTopBound(b) - cameraY <= CH + 8;
           });
           // Keep the attachment of every surviving leaf, even below the viewport.
           var firstAttachment = revealIndex;
@@ -1891,7 +1874,7 @@
             if (bloomT >= 1) {
               bloomHold++;
               if (bloomHold >= 75) {
-                finishRound();
+                finishAnimation();
                 return;
               }
             }
@@ -1899,7 +1882,7 @@
           } else if (mode === "withering") {
             updateDry();
             if (dryHold + 1e-9 >= WITHER_HOLD_SECONDS) {
-              finishRound();
+              finishAnimation();
               return;
             }
           }
@@ -1923,49 +1906,46 @@
           if (mode !== "idle") rafId = requestAnimationFrame(tick);
         }
 
-        actionBtn.addEventListener("click", function () {
-          if (mode !== "active" && mode !== "idle") return;
-          stopLoop();
-          if (mode === "active") {
-            mode = "blooming";
-            startBloom();
-            actionBtn.disabled = true;
-            actionBtn.textContent = "Цветение";
-            loseBtn.disabled = true;
-            actionBtn.classList.remove("stop");
-            startLoop();
-          } else if (mode === "idle") {
-            resetState();
-            mode = "active";
-            actionBtn.textContent = "Стоп";
-            loseBtn.disabled = false;
-            actionBtn.classList.add("stop");
-            startLoop();
-          }
-        });
+        // Keep test controls consistent with the current animation state.
+        function syncControls() {
+          var growing = mode === "active";
+          actionBtn.disabled = mode !== "idle" && !growing;
+          actionBtn.textContent = {
+            idle: "Старт",
+            active: "Стоп",
+            blooming: "Цветение",
+            withering: "Увядание",
+          }[mode];
+          actionBtn.classList.toggle("stop", growing);
+          loseBtn.disabled = !growing;
+        }
 
-        var loseBtn = document.getElementById("lose");
-        loseBtn.addEventListener("click", function () {
-          if (mode !== "active") return;
+        function startAnimation(nextMode) {
           stopLoop();
-          witherT = 0;
-          mode = "withering";
-          startDry();
-          actionBtn.disabled = true;
-          actionBtn.textContent = "Увядание";
-          loseBtn.disabled = true;
-          actionBtn.classList.remove("stop");
+          mode = nextMode;
+          if (mode === "active") resetState();
+          else if (mode === "blooming") startBloom();
+          else if (mode === "withering") startDry();
+          syncControls();
           startLoop();
+        }
+
+        actionBtn.addEventListener("click", function () {
+          if (mode === "idle") startAnimation("active");
+          else if (mode === "active") startAnimation("blooming");
         });
 
-        // This visual prototype pauses in the background; no betting round exists yet.
+        loseBtn.addEventListener("click", function () {
+          if (mode === "active") startAnimation("withering");
+        });
+
+        // Pause the animation test while the tab is hidden.
         document.addEventListener("visibilitychange", function () {
-          var now = performance.now();
           if (document.hidden) {
-            hiddenAt = now;
+            wasHidden = true;
             stopLoop();
-          } else if (hiddenAt !== null) {
-            hiddenAt = null;
+          } else if (wasHidden) {
+            wasHidden = false;
             if (mode !== "idle") startLoop();
           }
         });
@@ -2022,3 +2002,4 @@
     </script>
   </body>
 </html>
+
