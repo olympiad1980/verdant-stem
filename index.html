@@ -238,6 +238,7 @@
         var WITHER_DURATION_SECONDS = 1.4;
         var WITHER_HOLD_SECONDS = 0.5;
         var bloomStem, bloomBranches, bloomT, bloomHold, bloomBudMaturity;
+        var bloomLeafElapsed = 0;
         var rafId = null,
           rng = Math.random;
 
@@ -1133,10 +1134,10 @@
             smoothStep((age - 0.5) / 0.8);
           // Ease each petiole outward during flowering; keep its leaf attached.
           var bloomSpread = mode === "blooming"
-            ? smoothStep((bloomT * BLOOM_FRAMES * FIXED_STEP) / 1.2)
+            ? smoothStep(bloomLeafElapsed / ((BLOOM_FRAMES + BLOOM_HOLD_FRAMES) * FIXED_STEP))
             : 0;
           var bend = b.bside * (0.05 + 0.15 * maturity +
-            (8 * Math.PI / 180) * bloomSpread) + sway;
+            (14 * Math.PI / 180) * bloomSpread) + sway;
           var target =
             b.bside > 0 ? (-30 * Math.PI) / 180 : (-150 * Math.PI) / 180;
           var angle = lerpAngle(b.leafAng, target, spread),
@@ -1149,7 +1150,7 @@
             leafAng: angle + bend,
             // Deepen only the leaf blade's arc during flowering.
             leafCurve: (curl + 0.018 * Math.sin(age * 1.8 + phase - 0.6)) *
-              (1 + 0.8 * bloomSpread),
+              (1 + 1.2 * bloomSpread),
           });
         }
 
@@ -1576,6 +1577,7 @@
 
         /* ---- раскрытие астры ---- */
         var BLOOM_FRAMES = 150;
+        var BLOOM_HOLD_FRAMES = 75;
         // Flat aster: staggered rows of narrow petals, dark outside and light inside.
         var ASTER_LAYERS = [
           {
@@ -1613,6 +1615,7 @@
           bloomBudMaturity = currentBudMaturity();
           bloomT = 0;
           bloomHold = 0;
+          bloomLeafElapsed = 0;
           captureBloom();
         }
 
@@ -1900,11 +1903,13 @@
             var elapsed = bloomT * BLOOM_FRAMES * FIXED_STEP;
             var speed = 1 - smoothStep(elapsed / BLOOM_COAST_SECONDS);
             bloomT = Math.min(1, bloomT + 1 / BLOOM_FRAMES);
+            // Foliage keeps opening throughout the flower hold, on its own clock.
+            bloomLeafElapsed += FIXED_STEP;
             advancePlant(speed, false, smoothStep(bloomT / 0.56));
             captureBloom();
             if (bloomT >= 1) {
               bloomHold++;
-              if (bloomHold >= 75) {
+              if (bloomHold >= BLOOM_HOLD_FRAMES) {
                 finishAnimation();
                 return;
               }
