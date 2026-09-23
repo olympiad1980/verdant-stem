@@ -934,8 +934,6 @@
                 lenBoost: b.lenBoost,
                 leafAng: b.leafAng,
                 leafCurve: b.leafCurve,
-                leafTipCurl: b.leafTipCurl,
-                widthScale: b.widthScale,
                 front: b.front,
                 appear: b.appear,
                 color: phaseLeafCss(b.ph),
@@ -1034,8 +1032,7 @@
                 leafCurve:
                   (b.leafCurve || 0) +
                   (seed > 0.5 ? 1 : -1) * (0.3 + 0.45 * pace) * wrinkle,
-                widthScale: (b.widthScale === undefined ? 1 : b.widthScale) *
-                  (1 - (0.28 + seed * 0.26) * sag),
+                widthScale: 1 - (0.28 + seed * 0.26) * sag,
                 dryFold: wrinkle * (0.65 + seed * 0.35),
               });
               leafList.push({ b: leaf, pts: dp, sag: sag });
@@ -1130,45 +1127,29 @@
               (LEAF_LARGE - LEAF_SMALL),
           );
           var age = (b.age || 0) / 60;
-          var bloomAge = mode === "blooming" ? bloomT * BLOOM_FRAMES * FIXED_STEP : 0;
-          // Leaves finish their own gesture after stem growth has slowed down.
-          var motionAge = age + Math.min(bloomAge, 1.9) * 0.65;
-          var settle = 1 - smoothStep((bloomAge - 0.9) / 1.0);
-          var awake = smoothStep((age - 0.4) / 0.9);
-          var sway = awake * settle * (
-            0.065 * Math.sin(motionAge * (1.25 + seed * 0.5) + phase) +
-            0.022 * Math.sin(motionAge * 2.2 + phase * 1.7));
-          var unfoldAge = Math.max(0, age - 0.65);
-          var spring = 0.12 * Math.exp(-unfoldAge * 1.25) *
-            Math.sin(unfoldAge * 4.2) * awake;
-          var bloomProgress = smoothStep((bloomAge - seed * 0.14) / 1.45);
-          var bloomFollow = smoothStep((bloomAge - 0.12 - seed * 0.14) / 1.55);
-          var bloomRebound = Math.sin(Math.PI * bloomProgress) *
-            Math.sin(Math.PI * 2 * bloomProgress) * 0.045;
-          var bend = b.bside * (0.05 + 0.15 * maturity + spring +
-            (8 * Math.PI / 180) * bloomProgress + bloomRebound) + sway;
-          var target = b.bside > 0 ? (-30 * Math.PI) / 180 : (-150 * Math.PI) / 180;
-          var angle = lerpAngle(b.leafAng, target, spread);
-          // Distribute reorientation through the petiole instead of rotating a rigid rod.
-          var turn = angle - b.leafAng + bend;
-          var pts = bendBranch(b.pts, root, turn * 0.25, turn * 0.75);
-          var opening = (1 - smoothStep((age - 0.6) / 2.2)) * 0.48;
+          var sway =
+            Math.sin(age * (1.5 + seed * 0.7) + phase) *
+            0.022 *
+            smoothStep((age - 0.5) / 0.8);
+          // Ease each petiole outward during flowering; keep its leaf attached.
+          var bloomSpread = mode === "blooming"
+            ? smoothStep((bloomT * BLOOM_FRAMES * FIXED_STEP) / 1.2)
+            : 0;
+          var bend = b.bside * (0.05 + 0.15 * maturity +
+            (8 * Math.PI / 180) * bloomSpread) + sway;
+          var target =
+            b.bside > 0 ? (-30 * Math.PI) / 180 : (-150 * Math.PI) / 180;
+          var angle = lerpAngle(b.leafAng, target, spread),
+            delta = angle - b.leafAng;
+          var pts = bendBranch(b.pts, root, delta, bend);
+          var opening = (1 - smoothStep((age - 0.6) / 1.5)) * 0.2;
           var curl = (seed * 2 - 1) * (0.1 + 0.65 * maturity) + opening;
-          var flex = awake * settle * (
-            0.16 * Math.sin(motionAge * (1.25 + seed * 0.5) + phase - 0.85) +
-            0.055 * Math.sin(motionAge * 2.05 + phase * 1.7 - 1.2));
-          // Only some tips curl noticeably, in either direction; the base stays fixed.
-          var tipStrength = seed > 0.42 ? 0.22 + 0.38 * seed : 0.05;
-          var tipSign = seed > 0.7 ? -1 : 1;
-          var tipCurl = tipSign * tipStrength * awake *
-            (0.55 + 0.45 * Math.sin(motionAge * 1.35 + phase - 1.45)) * settle;
           return Object.assign({}, b, {
             pts: pts,
-            leafAng: b.leafAng + turn,
-            leafCurve: curl * (1 - 0.32 * bloomFollow) + flex -
-              b.bside * 0.14 * (bloomProgress - bloomFollow),
-            leafTipCurl: tipCurl + tipSign * tipStrength * 0.2 * bloomFollow,
-            widthScale: 1 - (1 - smoothStep((age - 0.6) / 1.8)) * 0.2,
+            leafAng: angle + bend,
+            // Deepen only the leaf blade's arc during flowering.
+            leafCurve: (curl + 0.018 * Math.sin(age * 1.8 + phase - 0.6)) *
+              (1 + 0.8 * bloomSpread),
           });
         }
 
@@ -1286,7 +1267,6 @@
           drySeed,
           shapeAge,
           leafCurve,
-          leafTipCurl,
         ) {
           ctx.save();
           ctx.translate(bx, by);
@@ -1302,20 +1282,6 @@
             (widthScale === undefined ? 1 : widthScale);
           var fold = dryFold || 0,
             seed = drySeed || 0;
-          // Arc-length sampled midrib: tip curvature acts only on the distal third.
-          // The outline and vein share this axis, so no transparent seam can form.
-          var axis = [{ x: 0, y: 0, theta: 0 }];
-          var curve = leafCurve || 0, tipCurl = leafTipCurl || 0;
-          for (var ai = 1; ai <= 120; ai++) {
-            var au = ai / 120;
-            var theta = curve * au + tipCurl * smoothStep((au - 0.62) / 0.38);
-            var previous = axis[ai - 1];
-            axis.push({
-              x: previous.x + L / 240 * (Math.cos(previous.theta) + Math.cos(theta)),
-              y: previous.y + L / 240 * (Math.sin(previous.theta) + Math.sin(theta)),
-              theta: theta,
-            });
-          }
           function point(u, side) {
             var center = W * 0.12 * Math.sin(u * Math.PI * 0.75);
             // Rounded, smooth young leaves gradually develop a longer pointed outline.
@@ -1338,12 +1304,14 @@
                 Math.sin(u * Math.PI * 2.5 + seed * 2) *
                 Math.sin(u * Math.PI) +
                 0.27 * Math.max(0, (u - 0.72) / 0.28) * (seed > 0.5 ? 1 : -1));
-            var index = Math.min(119, Math.floor(u * 120));
-            var fraction = u * 120 - index;
-            var a = axis[index], b = axis[index + 1];
-            var theta = a.theta + (b.theta - a.theta) * fraction;
-            var axisX = a.x + (b.x - a.x) * fraction;
-            var axisY = a.y + (b.y - a.y) * fraction;
+            var curve = leafCurve || 0,
+              theta = curve * u;
+            var axisX =
+              Math.abs(curve) < 0.0001 ? L * u : (L * Math.sin(theta)) / curve;
+            var axisY =
+              Math.abs(curve) < 0.0001
+                ? 0
+                : (L * (1 - Math.cos(theta))) / curve;
             var across =
               y * (1 - fold * 0.2 * (0.5 + 0.5 * Math.sin(u * 23 + seed * 9))) +
               bend;
@@ -1436,7 +1404,6 @@
             rndSeed && rndSeed.drySeed,
             shapeAge,
             rndSeed && rndSeed.leafCurve,
-            rndSeed && rndSeed.leafTipCurl,
           );
           ctx.restore();
         }
@@ -2066,7 +2033,6 @@
     </script>
   </body>
 </html>
-
 
 
 
