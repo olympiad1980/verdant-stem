@@ -1131,7 +1131,12 @@
             Math.sin(age * (1.5 + seed * 0.7) + phase) *
             0.022 *
             smoothStep((age - 0.5) / 0.8);
-          var bend = b.bside * (0.05 + 0.15 * maturity) + sway;
+          // Ease each petiole outward during flowering; keep its leaf attached.
+          var bloomSpread = mode === "blooming"
+            ? smoothStep((bloomT * BLOOM_FRAMES * FIXED_STEP) / 1.2)
+            : 0;
+          var bend = b.bside * (0.05 + 0.15 * maturity +
+            (8 * Math.PI / 180) * bloomSpread) + sway;
           var target =
             b.bside > 0 ? (-30 * Math.PI) / 180 : (-150 * Math.PI) / 180;
           var angle = lerpAngle(b.leafAng, target, spread),
@@ -1407,14 +1412,16 @@
           return smoothStep((0.78 - screenY) / 0.28);
         }
 
-        function scaleBud(maturity) {
-          ctx.scale(0.66 + 0.34 * maturity, 0.82 + 0.18 * maturity);
+        function scaleBud(maturity, flowerOpen) {
+          // Widen the bud only; keep its length and the final aster size unchanged.
+          var widthBoost = 1 + 0.1 * (1 - smoothStep((flowerOpen || 0) / 0.4));
+          ctx.scale((0.66 + 0.34 * maturity) * widthBoost, 0.82 + 0.18 * maturity);
         }
 
         // Flat silhouette halo: one translucent fill, no blur or overlapping alpha.
         var BUD_HALO_ENABLED = true;
         var BUD_HALO_SCALE = 1.45;
-        function drawBudHalo(tip, ang, sc, t, maturity) {
+        function drawBudHalo(tip, ang, sc, t, maturity, flowerOpen) {
           if (!BUD_HALO_ENABLED || t >= 1) return;
           var pulse =
             0.125 + 0.025 * Math.sin((performance.now() * Math.PI * 2) / 3200);
@@ -1423,7 +1430,7 @@
           ctx.fillStyle = lerpC(budColor, deadBud, 0);
           ctx.translate(tip.x, tip.y);
           ctx.rotate(ang);
-          scaleBud(maturity);
+          scaleBud(maturity, flowerOpen);
           ctx.translate(0, -11 * sc);
           ctx.scale(BUD_HALO_SCALE, BUD_HALO_SCALE);
           ctx.translate(0, 11 * sc);
@@ -1602,9 +1609,9 @@
         var BLOOM_COAST_SECONDS = 1.1;
         function startBloom() {
           bloomBudMaturity = currentBudMaturity();
-          captureBloom();
           bloomT = 0;
           bloomHold = 0;
+          captureBloom();
         }
 
         // Fixed petal azimuths: a cupped profile opens as the head lifts toward us.
@@ -1621,11 +1628,11 @@
           // Continue from the actual young bud on an early Stop, without a shape jump.
           var maturity = bloomBudMaturity +
             (1 - bloomBudMaturity) * smoothStep(open / 0.4);
-          drawBudHalo({ x: x, y: y }, ang, sc, spread, maturity);
+          drawBudHalo({ x: x, y: y }, ang, sc, spread, maturity, open);
           ctx.save();
           ctx.translate(x, y);
           ctx.rotate(ang);
-          scaleBud(maturity);
+          scaleBud(maturity, open);
           ctx.strokeStyle = stemCss;
           ctx.lineWidth = CH * 0.0034;
           ctx.lineCap = "round";
@@ -2024,5 +2031,6 @@
     </script>
   </body>
 </html>
+
 
 
