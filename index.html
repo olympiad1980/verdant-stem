@@ -233,11 +233,11 @@
           waveSign,
           sameRun;
         var mode, witherT;
-        var dryStem, dryBranches, dryHold;
+        var dryStem, dryBranches, dryHold, dryBudMaturity;
         // Tune the whole loss gesture with one duration; the result hold is independent.
         var WITHER_DURATION_SECONDS = 1.4;
         var WITHER_HOLD_SECONDS = 0.5;
-        var bloomStem, bloomBranches, bloomT, bloomHold;
+        var bloomStem, bloomBranches, bloomT, bloomHold, bloomBudMaturity;
         var rafId = null,
           rng = Math.random;
 
@@ -944,6 +944,7 @@
         }
 
         function startDry() {
+          dryBudMaturity = currentBudMaturity();
           var snapshot = capturePlant();
           dryStem = snapshot.stem;
           dryBranches = snapshot.branches;
@@ -1400,10 +1401,20 @@
           ctx.restore();
         }
 
+        // Keep the juvenile bud closed low in the field; finish opening at mid-screen.
+        function currentBudMaturity() {
+          var screenY = (fullPath[revealIndex].y - cameraY) / CH;
+          return smoothStep((0.78 - screenY) / 0.28);
+        }
+
+        function scaleBud(maturity) {
+          ctx.scale(0.55 + 0.45 * maturity, 0.82 + 0.18 * maturity);
+        }
+
         // Flat silhouette halo: one translucent fill, no blur or overlapping alpha.
         var BUD_HALO_ENABLED = true;
         var BUD_HALO_SCALE = 1.45;
-        function drawBudHalo(tip, ang, sc, t) {
+        function drawBudHalo(tip, ang, sc, t, maturity) {
           if (!BUD_HALO_ENABLED || t >= 1) return;
           var pulse =
             0.125 + 0.025 * Math.sin((performance.now() * Math.PI * 2) / 3200);
@@ -1412,6 +1423,7 @@
           ctx.fillStyle = lerpC(budColor, deadBud, 0);
           ctx.translate(tip.x, tip.y);
           ctx.rotate(ang);
+          scaleBud(maturity);
           ctx.translate(0, -11 * sc);
           ctx.scale(BUD_HALO_SCALE, BUD_HALO_SCALE);
           ctx.translate(0, 11 * sc);
@@ -1440,23 +1452,25 @@
             ctx.restore();
           }
           // Trace every petal in the same winding direction for a solid union.
-          petal(-0.56 - t * 0.5, 20 * sc, 5 * sc);
-          petal(0.56 + t * 0.5, 20 * sc, 5 * sc);
-          petal(-0.29, 23.5 * sc, 5.2 * sc);
-          petal(0.29, 23.5 * sc, 5.2 * sc);
+          var spread = 0.12 + 0.88 * maturity;
+          petal(-0.56 * spread - t * 0.5, 20 * sc, 5 * sc);
+          petal(0.56 * spread + t * 0.5, 20 * sc, 5 * sc);
+          petal(-0.29 * spread, 23.5 * sc, 5.2 * sc);
+          petal(0.29 * spread, 23.5 * sc, 5.2 * sc);
           petal(0, 26 * sc, 6.4 * sc);
           ctx.fill();
           ctx.restore();
         }
 
         // Four overlapping side lobes plus the central front lobe form a tight bud.
-        function drawBudBaseLeaves(sc) {
+        function drawBudBaseLeaves(sc, maturity) {
+          var spread = 0.12 + 0.88 * maturity;
           ctx.fillStyle = branchCss;
-          drawTeardrop(0, 2 * sc, -1.05, 9 * sc, -2 * sc);
-          drawTeardrop(0, 2 * sc, 1.1, 8 * sc, 1.8 * sc);
+          drawTeardrop(0, 2 * sc, -1.05 * spread, 9 * sc, -2 * sc);
+          drawTeardrop(0, 2 * sc, 1.1 * spread, 8 * sc, 1.8 * sc);
         }
 
-        function drawCalyx(sc, open, pitch, wilt) {
+        function drawCalyx(sc, open, pitch, wilt, maturity) {
           var lobes = [
             [-0.56, 20, 5.0, -2.25],
             [0.56, 20, 5.0, 2.25],
@@ -1477,7 +1491,8 @@
             drawTeardrop(
               0,
               0,
-              lobe[0] + (lobe[3] - lobe[0]) * progress,
+              lobe[0] * (0.12 + 0.88 * maturity) * (1 - progress) +
+                lobe[3] * progress,
               lobe[1] * sc,
               lobe[2] * sc * (lobe[0] < 0 ? -1 : 1),
             );
@@ -1537,13 +1552,15 @@
             prev = pts[Math.max(0, pts.length - 24)];
           var ang = Math.atan2(tip.y - prev.y, tip.x - prev.x) + Math.PI / 2;
           var sc = CH * 0.0018;
-          if (mode !== "withering") drawBudHalo(tip, ang, sc, 0);
+          var maturity = mode === "withering" ? dryBudMaturity : currentBudMaturity();
+          if (mode !== "withering") drawBudHalo(tip, ang, sc, 0, maturity);
           // The same five lobes in every state; the wilted stem supplies the droop.
           ctx.save();
           ctx.translate(tip.x, tip.y);
           ctx.rotate(ang);
-          drawBudBaseLeaves(sc);
-          drawCalyx(sc, 0, 1, t);
+          scaleBud(maturity);
+          drawBudBaseLeaves(sc, maturity);
+          drawCalyx(sc, 0, 1, t, maturity);
           drawFrontCalyx(sc, 0, 1, t);
           ctx.restore();
         }
@@ -1584,6 +1601,7 @@
 
         var BLOOM_COAST_SECONDS = 1.1;
         function startBloom() {
+          bloomBudMaturity = currentBudMaturity();
           captureBloom();
           bloomT = 0;
           bloomHold = 0;
@@ -1600,10 +1618,14 @@
           var hx = Math.sin(lean) * 9 * sc,
             hy = -9 * sc * lift;
           var pitch = 0.3 + 0.6 * lift;
-          drawBudHalo({ x: x, y: y }, ang, sc, spread);
+          // Continue from the actual young bud on an early Stop, without a shape jump.
+          var maturity = bloomBudMaturity +
+            (1 - bloomBudMaturity) * smoothStep(open / 0.4);
+          drawBudHalo({ x: x, y: y }, ang, sc, spread, maturity);
           ctx.save();
           ctx.translate(x, y);
           ctx.rotate(ang);
+          scaleBud(maturity);
           ctx.strokeStyle = stemCss;
           ctx.lineWidth = CH * 0.0034;
           ctx.lineCap = "round";
@@ -1667,8 +1689,8 @@
             });
           }
           // Calyx stays behind the whole corolla, including the far-side petals.
-          drawBudBaseLeaves(sc);
-          drawCalyx(sc, open, pitch);
+          drawBudBaseLeaves(sc, maturity);
+          drawCalyx(sc, open, pitch, 0, maturity);
           // The opaque overlapping petal bases cover the calyx as the head opens.
           var baseRadius = R * smoothStep(Math.max(0, (open - 0.18) / 0.82));
           ctx.fillStyle = ASTER_LAYERS[0].colors[0];
@@ -2002,4 +2024,5 @@
     </script>
   </body>
 </html>
+
 
