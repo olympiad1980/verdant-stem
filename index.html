@@ -36,12 +36,30 @@
         justify-content: center;
         user-select: none;
       }
+      /* One 402 x 700 composition, fitted uniformly inside the safe viewport. */
+      #viewport {
+        position: fixed;
+        top: env(safe-area-inset-top, 0px);
+        right: env(safe-area-inset-right, 0px);
+        bottom: env(safe-area-inset-bottom, 0px);
+        left: env(safe-area-inset-left, 0px);
+        display: grid;
+        place-items: center;
+      }
+      #frame {
+        position: relative;
+        width: 402px;
+        height: 700px;
+      }
       #app {
         --action-height: 60px;
-        position: relative;
-        width: 100%;
-        max-width: 440px;
-        height: 100dvh;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 402px;
+        height: 700px;
+        transform: scale(var(--scene-scale, 1));
+        transform-origin: top left;
         display: flex;
         flex-direction: column;
         background: #0e1410;
@@ -53,7 +71,7 @@
         left: 0;
         right: 0;
         top: 0;
-        height: calc(env(safe-area-inset-top) + 60px);
+        height: 60px;
         background: #24352b;
         border-bottom: 1px solid #35493c;
         pointer-events: none;
@@ -76,7 +94,7 @@
         right: 0;
         bottom: 0;
         z-index: 3;
-        padding: 0 18px calc(env(safe-area-inset-bottom) + 18px);
+        padding: 0 18px 18px;
       }
       #action {
         width: 100%;
@@ -108,7 +126,7 @@
       #fs {
         position: absolute;
         z-index: 5;
-        top: calc(env(safe-area-inset-top) + 12px);
+        top: 12px;
         right: 12px;
         width: 36px;
         height: 36px;
@@ -136,7 +154,7 @@
       #lose {
         position: absolute;
         z-index: 5;
-        top: calc(env(safe-area-inset-top) + 12px);
+        top: 12px;
         left: 12px;
         height: 36px;
         padding: 0 13px;
@@ -156,6 +174,8 @@
     </style>
   </head>
   <body>
+    <div id="viewport">
+      <div id="frame">
     <div id="app">
       <button id="lose" disabled>Увядание</button>
       <button id="fs" aria-label="На весь экран">
@@ -167,6 +187,8 @@
       <div id="growth-panel" aria-hidden="true"></div>
       <div id="bottom"><button id="action">Старт</button></div>
     </div>
+      </div>
+    </div>
 
     <script>
       (function () {
@@ -174,6 +196,9 @@
         var ctx = canvas.getContext("2d");
         var actionBtn = document.getElementById("action");
         var stage = document.getElementById("stage");
+        var viewport = document.getElementById("viewport");
+        var frame = document.getElementById("frame");
+        var app = document.getElementById("app");
         var loseBtn = document.getElementById("lose");
         var growthPanel = document.getElementById("growth-panel");
 
@@ -257,30 +282,32 @@
 
         var ACTION_ZONE_Y = 630;
         function resize() {
+          var availableWidth = viewport.clientWidth;
+          var availableHeight = viewport.clientHeight;
+          if (availableWidth <= 0 || availableHeight <= 0) return;
+          // Cap desktop size at 440 px wide; portrait and landscape use the same fit.
+          var scale = Math.min(availableWidth / CW, availableHeight / CH, 440 / CW);
+          frame.style.width = CW * scale + "px";
+          frame.style.height = CH * scale + "px";
+          app.style.setProperty("--scene-scale", scale);
+
           var DPR = Math.min(2, window.devicePixelRatio || 1);
-          var vw = stage.clientWidth,
-            vh = stage.clientHeight;
-          if (vw <= 0 || vh <= 0) return;
-          canvas.width = Math.round(vw * DPR);
-          canvas.height = Math.round(vh * DPR);
-          // The plant always grows in the same 402 x 700 world; resize only projects it.
-          ctx.setTransform(canvas.width / CW, 0, 0, canvas.height / CH, 0, 0);
-          var mb =
-            growthPanel.getBoundingClientRect().bottom -
-            stage.getBoundingClientRect().top;
-          CAMERA_TRIGGER_Y = Math.max(
-            CH * 0.06,
-            (mb / vh) * CH + CH * CAMERA_FRAC,
-          );
-          var actionRect = actionBtn.getBoundingClientRect();
-          ACTION_ZONE_Y =
-            ((actionRect.top - stage.getBoundingClientRect().top) / vh) * CH;
+          var pixelScale = scale * DPR;
+          canvas.width = Math.ceil(CW * pixelScale);
+          canvas.height = Math.ceil(CH * pixelScale);
+          // Exactly the same scale for both axes; extra edge pixels are clipped.
+          canvas.style.width = canvas.width / pixelScale + "px";
+          canvas.style.height = canvas.height / pixelScale + "px";
+          ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
+          var stageRect = stage.getBoundingClientRect();
+          var mb = growthPanel.getBoundingClientRect().bottom - stageRect.top;
+          CAMERA_TRIGGER_Y = Math.max(CH * 0.06, mb / scale + CH * CAMERA_FRAC);
+          ACTION_ZONE_Y = (actionBtn.getBoundingClientRect().top - stageRect.top) / scale;
           REVEAL_SPEED = CH * SPEED_FRAC;
           SPAWN_LAG_PX = CH * SPAWN_LAG_FRAC;
           START = { x: CW * 0.24, y: CH * 0.9 };
           if (!fullPath) resetState();
-          if (cameraActive)
-            cameraY = fullPath[revealIndex].y - CAMERA_TRIGGER_Y;
+          // Resizing only changes projection; preserve the camera and animation pose.
           draw();
         }
 
@@ -1986,6 +2013,7 @@
           }
         });
         window.addEventListener("resize", resize);
+        if (window.ResizeObserver) new ResizeObserver(resize).observe(viewport);
         window.addEventListener("orientationchange", function () {
           setTimeout(resize, 250);
         });
@@ -2038,6 +2066,7 @@
     </script>
   </body>
 </html>
+
 
 
 
